@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a2a43" />
+  <meta name="robots" content="noindex" />
+  <title>Admin | Jishnu K</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a2a43'/%3E%3Ctext x='32' y='43' font-size='30' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%23ffb547'%3EJK%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <header class="top">
+    <a class="brand" href="/">Jishnu K</a>
+    <nav aria-label="Main">
+      <a href="/">View gallery</a>
+      <button type="button" class="link-btn" id="logout" hidden>Log out</button>
+    </nav>
+  </header>
+
+  <main class="admin">
+
+    <!-- Login -->
+    <section class="panel" id="loginPanel">
+      <h1>Admin</h1>
+      <p class="sub">Enter your password to add or remove photos and videos.</p>
+      <form id="loginForm" class="stack">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+        <button class="btn" type="submit">Log in</button>
+        <p class="msg" id="loginMsg" role="alert"></p>
+      </form>
+    </section>
+
+    <!-- Upload + manage -->
+    <div id="appPanel" hidden>
+
+      <section class="panel">
+        <h1>Add photos and videos</h1>
+        <p class="sub">JPG, PNG, WebP, GIF, AVIF, MP4, WebM or MOV. Up to <span id="maxMb">200</span> MB each.</p>
+
+        <label class="drop" id="drop" for="fileInput">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+          <span class="drop-main">Choose files</span>
+          <span class="drop-sub">or drop them here</span>
+        </label>
+        <input id="fileInput" class="sr" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,image/avif,video/mp4,video/webm,video/quicktime" />
+
+        <ul class="queue" id="queue"></ul>
+
+        <div class="actions" id="queueActions" hidden>
+          <button class="btn" type="button" id="uploadBtn">Upload</button>
+          <button class="btn-quiet" type="button" id="clearBtn">Clear list</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Posted so far</h2>
+        <ul class="manage" id="manage"></ul>
+        <p class="sub" id="manageEmpty">Nothing posted yet.</p>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="admin.js" defer></script>
+</body>
+</html>

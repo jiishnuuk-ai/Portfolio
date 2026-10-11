@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a2a43" />
+  <meta name="description" content="Photos and videos by Jishnu K." />
+  <title>Jishnu K | Photos and videos</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a2a43'/%3E%3Ctext x='32' y='43' font-size='30' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%23ffb547'%3EJK%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="top">
+    <a class="brand" href="#top">Jishnu K</a>
+    <nav aria-label="Main">
+      <a href="#gallery">Gallery</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <main>
+
+    <section class="hero" id="top">
+      <div class="reel" aria-hidden="true">
+        <div class="row r1"><div class="track" id="track1"></div></div>
+        <div class="row r2"><div class="track" id="track2"></div></div>
+      </div>
+      <div class="hero-copy">
+        <h1><span>Jishnu K</span></h1>
+        <p class="hero-line">Photos and videos I've shot, posted here as I go.</p>
+        <a class="btn" href="#gallery">See the gallery</a>
+      </div>
+    </section>
+
+    <section class="gallery" id="gallery" aria-labelledby="gallery-title">
+      <div class="g-head">
+        <div>
+          <h2 id="gallery-title">Gallery</h2>
+          <p class="tally" id="tally"></p>
+        </div>
+        <div class="filters" role="group" aria-label="Show">
+          <button type="button" data-filter="all" aria-pressed="true">Everything</button>
+          <button type="button" data-filter="image" aria-pressed="false">Photos</button>
+          <button type="button" data-filter="video" aria-pressed="false">Videos</button>
+        </div>
+      </div>
+
+      <div class="grid" id="grid"></div>
+      <p class="state" id="state" role="status">Loading the gallery...</p>
+    </section>
+
+  </main>
+
+  <footer class="footer" id="contact">
+    <h2>Say hello</h2>
+    <ul class="contact-list">
+      <li><a href="mailto:im.jishnuu@gmail.com">im.jishnuu@gmail.com</a></li>
+      <li><a href="tel:+917902286179">7902286179</a></li>
+      <li><a href="https://instagram.com/jishnuuuk" target="_blank" rel="noopener">@jishnuuuk on Instagram</a></li>
+    </ul>
+    <p class="made">Built with <span class="heart" aria-label="love">&#10084;</span> by
+      <a href="https://instagram.com/jishnuuuk" target="_blank" rel="noopener">@jishnuuuk</a></p>
+  </footer>
+
+  <!-- Full-screen viewer -->
+  <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Media viewer" hidden>
+    <div class="lb-bg" id="lbBg"></div>
+    <div class="lb-top" id="lbTop">
+      <p class="lb-count" id="lbCount"></p>
+      <button type="button" class="icon-btn" id="lbClose" aria-label="Close viewer">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+      </button>
+    </div>
+    <div class="lb-stage" id="lbStage"></div>
+    <button type="button" class="icon-btn nav prev" id="lbPrev" aria-label="Previous">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button type="button" class="icon-btn nav next" id="lbNext" aria-label="Next">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+    <div class="lb-cap" id="lbCap">
+      <h3 id="lbTitle"></h3>
+      <p class="lb-text" id="lbText"></p>
+      <p class="lb-date" id="lbDate"></p>
+    </div>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
