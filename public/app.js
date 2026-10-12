@@ -14,7 +14,7 @@
   let visible = [];
   let filter = 'all';
 
-  const url = (it) => '/uploads/' + encodeURIComponent(it.file);
+  const url = (it) => it.url || (String(it.file || '').startsWith('http') ? it.file : '/uploads/' + encodeURIComponent(it.file));
 
   function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -31,7 +31,9 @@
     try {
       const res = await fetch('/api/media', { cache: 'no-cache' });
       if (!res.ok) throw new Error('bad status');
+      if (!res.ok) throw new Error('bad status');
       items = await res.json();
+      if (!Array.isArray(items)) throw new Error('invalid gallery response');
     } catch {
       stateEl.textContent = "Couldn't load the gallery. Check your connection and reload the page.";
       return;

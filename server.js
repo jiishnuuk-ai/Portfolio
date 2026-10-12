@@ -7,11 +7,30 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
+const os = require('os');
+
 
 /* ---------- config ---------- */
 const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-const MAX_MB = Number(process.env.MAX_UPLOAD_MB) || 200;
+const MAX_MB = Math.max(1, Math.min(Number(process.env.MAX_UPLOAD_MB) || 100, 100));
+const CLOUDINARY_URL = process.env.CLOUDINARY_URL || '';
+const cloudinaryCredentials = (() => {
+  if (!CLOUDINARY_URL) return null;
+  try {
+    const parsed = new URL(CLOUDINARY_URL);
+    if (parsed.protocol !== 'cloudinary:' || !parsed.username || !parsed.password || !parsed.hostname) return null;
+    return {
+      apiKey: decodeURIComponent(parsed.username),
+      apiSecret: decodeURIComponent(parsed.password),
+      cloudName: parsed.hostname,
+    };
+  } catch {
+    return null;
+  }
+})();
+const cloudinaryEnabled = Boolean(cloudinaryCredentials);
+const CLOUDINARY_TAG = 'jishnu-portfolio-media';
 const adminEnabled = ADMIN_PASSWORD.length >= 8 && ADMIN_PASSWORD !== 'change-me-please';
 
 /* The admin page lives in its own folder and is served only at a secret
@@ -23,11 +42,13 @@ const adminPageEnabled =
 const ADMIN_DIR = path.join(__dirname, 'admin');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const TEMP_UPLOAD_DIR = path.join(os.tmpdir(), 'jishnu-media-portfolio-uploads');
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'media.json');
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(TEMP_UPLOAD_DIR, { recursive: true });
 
 /* Only these types can be uploaded. The file extension on disk comes from
    this table, never from the name the visitor sent. */
@@ -109,7 +130,7 @@ function requireAdmin(req, res, next) {
 
 /* ---------- uploads ---------- */
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  destination: (req, file, cb) => cb(null, TEMP_UPLOAD_DIR),
   filename: (req, file, cb) => {
     cb(null, crypto.randomBytes(12).toString('hex') + TYPES[file.mimetype].ext);
   },
@@ -170,7 +191,7 @@ app.use((req, res, next) => {
     'Referrer-Policy': 'same-origin',
     'X-Frame-Options': 'DENY',
     'Content-Security-Policy':
-      "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; " +
+      "default-src 'self'; img-src 'self' https://res.cloudinary.com data: blob:; media-src 'self' https://res.cloudinary.com blob:; " +
       "style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; " +
       "script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
   });
@@ -194,10 +215,122 @@ app.use(
 );
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'], maxAge: '1h' }));
 
-/* Public: list everything, newest first */
-app.get('/api/media', (req, res) => {
+/* Cloudinary API helpers: signed uploads and authenticated resource listing. */
+function cloudinarySignature(params) {
+  const serialized = Object.entries(params)
+    .filter(([key, value]) => !['file', 'api_key', 'resource_type', 'cloud_name', 'signature'].includes(key) && value !== undefined && value !== null && value !== '')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+  return crypto.createHash('sha1').update(serialized + cloudinaryCredentials.apiSecret).digest('hex');
+}
+
+function cloudinaryContext(title, caption, w, h) {
+  const escape = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/=/g, '\\=');
+  return Object.entries({ caption, height: h, title, width: w })
+    .filter(([, value]) => value !== undefined && value !== null && String(value) !== '')
+    .map(([key, value]) => `${key}=${escape(value)}`)
+    .join('|');
+}
+
+async function cloudinaryUpload(file, fields, resourceType) {
+  const params = {
+    timestamp: String(Math.floor(Date.now() / 1000)),
+    public_id: 'media-' + crypto.randomUUID(),
+    tags: CLOUDINARY_TAG,
+    overwrite: 'false',
+  };
+  const context = cloudinaryContext(fields.title, fields.caption, fields.w, fields.h);
+  if (context) params.context = context;
+  const form = new FormData();
+  for (const [key, value] of Object.entries(params)) form.append(key, value);
+  form.append('api_key', cloudinaryCredentials.apiKey);
+  form.append('signature', cloudinarySignature(params));
+  const bytes = await fsp.readFile(file.path);
+  form.append('file', new Blob([bytes], { type: file.mimetype }), path.basename(file.path));
+  const endpoint = `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudinaryCredentials.cloudName)}/${resourceType}/upload`;
+  const response = await fetch(endpoint, { method: 'POST', body: form });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = result.error && result.error.message;
+    throw new HttpError(message || `Cloudinary upload failed (HTTP ${response.status}). Check your Cloudinary account and file limits.`, response.status === 413 ? 413 : 502);
+  }
+  return result;
+}
+
+async function cloudinaryApiRequest(apiPath, options = {}) {
+  const { apiKey, apiSecret, cloudName } = cloudinaryCredentials;
+  const url = new URL(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${apiPath}`);
+  Object.entries(options.query || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+  });
+  const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+  const response = await fetch(url, { method: options.method || 'GET', headers: { Authorization: `Basic ${auth}`, ...(options.headers || {}) }, body: options.body });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = result.error && result.error.message;
+    throw new HttpError(message || `Cloudinary API request failed (HTTP ${response.status}).`, 502);
+  }
+  return result;
+}
+
+/* ---------- persistent cloud media ---------- */
+let cloudMediaCache = { at: 0, items: null };
+const CLOUD_CACHE_MS = 20_000;
+
+function contextOf(resource) {
+  return (resource.context && (resource.context.custom || resource.context)) || {};
+}
+
+function fromCloudResource(resource) {
+  const custom = contextOf(resource);
+  const type = resource.resource_type === 'video' ? 'video' : 'image';
+  return {
+    id: resource.public_id,
+    file: resource.secure_url,
+    url: resource.secure_url,
+    type,
+    title: cleanText(custom.title, 120),
+    caption: cleanText(custom.caption, 500),
+    w: cleanDim(custom.width) || resource.width || null,
+    h: cleanDim(custom.height) || resource.height || null,
+    size: Number(resource.bytes) || 0,
+    createdAt: resource.created_at || new Date().toISOString(),
+    resourceType: resource.resource_type,
+  };
+}
+
+async function listCloudMedia() {
+  if (cloudMediaCache.items && Date.now() - cloudMediaCache.at < CLOUD_CACHE_MS) {
+    return cloudMediaCache.items;
+  }
+  const resources = [];
+  let nextCursor;
+  do {
+    const options = { max_results: 500, context: true };
+    if (nextCursor) options.next_cursor = nextCursor;
+    const page = await cloudinaryApiRequest('resources/by_tag/' + encodeURIComponent(CLOUDINARY_TAG), { query: options });
+    resources.push(...(page.resources || []));
+    nextCursor = page.next_cursor;
+  } while (nextCursor);
+
+  const items = resources
+    .map(fromCloudResource)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  cloudMediaCache = { at: Date.now(), items };
+  return items;
+}
+
+/* Public: list persistent Cloudinary media (local JSON only for local development). */
+app.get('/api/media', async (req, res, next) => {
   res.set('Cache-Control', 'no-cache');
-  res.json(db);
+  if (!cloudinaryEnabled) return res.json(db);
+  try {
+    res.json(await listCloudMedia());
+  } catch (err) {
+    console.error('Could not load media from Cloudinary:', err.message);
+    next(new HttpError('The gallery storage is temporarily unavailable. Please try again shortly.', 503));
+  }
 });
 
 /* Admin: check a password (used by the login form) */
@@ -209,35 +342,88 @@ app.post('/api/auth', requireAdmin, (req, res) => {
 app.post('/api/media', requireAdmin, upload.single('file'), async (req, res, next) => {
   const file = req.file;
   try {
+    if (process.env.RENDER_SERVICE_ID && !cloudinaryEnabled) {
+      throw new HttpError('Persistent storage is not configured. Add a valid CLOUDINARY_URL in Render Environment before uploading.', 503);
+    }
     if (!file) throw new HttpError('Choose a photo or video to upload.', 400);
 
     if (!(await contentMatchesType(file.path, file.mimetype))) {
       throw new HttpError("The file's contents don't match its type. Use a real JPG, PNG, WebP, GIF, AVIF, MP4, WebM or MOV.", 415);
     }
 
-    const item = {
-      id: crypto.randomUUID(),
-      file: file.filename,
-      type: TYPES[file.mimetype].kind,
-      title: cleanText(req.body.title, 120),
-      caption: cleanText(req.body.caption, 500),
-      w: cleanDim(req.body.w),
-      h: cleanDim(req.body.h),
-      size: file.size,
-      createdAt: new Date().toISOString(),
-    };
-    db.unshift(item);
-    await saveDb();
+    const title = cleanText(req.body.title, 120);
+    const caption = cleanText(req.body.caption, 500);
+    const w = cleanDim(req.body.w);
+    const h = cleanDim(req.body.h);
+    let item;
+
+    if (cloudinaryEnabled) {
+      // Cloudinary's Free plan currently limits images to 10 MB and videos to 100 MB.
+      if (TYPES[file.mimetype].kind === 'image' && file.size > 10 * 1024 * 1024) {
+        throw new HttpError('This image is over 10 MB. Resize/compress it or use a plan that supports larger images.', 413);
+      }
+      const resourceType = TYPES[file.mimetype].kind === 'video' ? 'video' : 'image';
+      const uploaded = await cloudinaryUpload(file, { title, caption, w, h }, resourceType);
+      item = {
+        id: uploaded.public_id,
+        file: uploaded.secure_url,
+        url: uploaded.secure_url,
+        type: resourceType,
+        title,
+        caption,
+        w: w || uploaded.width || null,
+        h: h || uploaded.height || null,
+        size: uploaded.bytes || file.size,
+        createdAt: uploaded.created_at || new Date().toISOString(),
+        resourceType,
+      };
+      cloudMediaCache = { at: 0, items: null };
+    } else {
+      const filename = crypto.randomBytes(12).toString('hex') + TYPES[file.mimetype].ext;
+      const finalPath = path.join(UPLOAD_DIR, filename);
+      await fsp.copyFile(file.path, finalPath);
+      item = {
+        id: crypto.randomUUID(),
+        file: filename,
+        type: TYPES[file.mimetype].kind,
+        title,
+        caption,
+        w,
+        h,
+        size: file.size,
+        createdAt: new Date().toISOString(),
+      };
+      db.unshift(item);
+      await saveDb();
+    }
     res.status(201).json(item);
   } catch (err) {
-    if (file) await fsp.unlink(file.path).catch(() => {});
     next(err);
+  } finally {
+    if (file) await fsp.unlink(file.path).catch(() => {});
   }
 });
 
-/* Admin: delete one item and its file */
+/* Admin: delete one item from cloud storage (or local storage in development). */
 app.delete('/api/media/:id', requireAdmin, async (req, res, next) => {
   try {
+    if (cloudinaryEnabled) {
+      const items = await listCloudMedia();
+      const item = items.find((m) => m.id === req.params.id);
+      if (!item) throw new HttpError('That item no longer exists.', 404);
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const destroyParams = { public_id: item.id, timestamp, invalidate: 'true' };
+      const result = await cloudinaryApiRequest(`${item.resourceType || item.type}/destroy`, {
+        method: 'POST',
+        body: new URLSearchParams({ ...destroyParams, api_key: cloudinaryCredentials.apiKey, signature: cloudinarySignature(destroyParams) }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      if (result.result === 'not found') throw new HttpError('That item no longer exists in cloud storage.', 404);
+      if (result.result !== 'ok') throw new HttpError('Cloud storage could not delete this item. Please try again.', 502);
+      cloudMediaCache = { at: 0, items: null };
+      return res.json({ ok: true });
+    }
+
     const index = db.findIndex((m) => m.id === req.params.id);
     if (index === -1) throw new HttpError('That item no longer exists.', 404);
     const [removed] = db.splice(index, 1);
@@ -267,6 +453,9 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`Portfolio running at http://localhost:${PORT}`);
+  if (cloudinaryEnabled) console.log('Media storage: Cloudinary (persistent cloud storage).');
+  else if (process.env.RENDER_SERVICE_ID) console.warn('PERSISTENT STORAGE NOT CONFIGURED: set a valid CLOUDINARY_URL in Render before accepting uploads.');
+  else console.warn('Media storage: local disk only. Configure CLOUDINARY_URL for persistent cloud storage.');
   if (!adminEnabled) console.log('Uploads are OFF: set ADMIN_PASSWORD (8+ characters) in .env to turn them on.');
   if (!adminPageEnabled) {
     console.log('Admin page is OFF: set ADMIN_PATH in .env to a secret word of 8+ letters, numbers, - or _ (for example studio-k7x2m9).');

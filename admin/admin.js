@@ -270,7 +270,9 @@
     let items = [];
     try {
       const res = await fetch('/api/media', { cache: 'no-cache' });
+      if (!res.ok) throw new Error('bad status');
       items = await res.json();
+      if (!Array.isArray(items)) throw new Error('invalid gallery response');
     } catch {
       manageEmpty.textContent = "Couldn't load your posts. Reload the page.";
       manageEmpty.hidden = false;
@@ -288,7 +290,7 @@
         thumb.className = 'thumb';
         thumb.alt = '';
         thumb.loading = 'lazy';
-        thumb.src = '/uploads/' + encodeURIComponent(it.file);
+        thumb.src = it.url || (String(it.file || '').startsWith('http') ? it.file : '/uploads/' + encodeURIComponent(it.file));
       } else {
         thumb = el('div', 'thumb', 'Video');
       }
